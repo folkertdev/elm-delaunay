@@ -7,8 +7,9 @@ import Circle2d
 import Vector2d exposing (Vector2d)
 import Polygon2d exposing (Polygon2d)
 import Circle2d
-import AllDict exposing (AllDict)
+import AdjacencyList exposing (AdjacencyList)
 import Set
+import AdjacencyList exposing (AdjacencyList)
 
 
 {-| S-hull: a fast sweep-hull routine for Delaunay triangulation by David Sinclair
@@ -161,6 +162,55 @@ hasCommonEdge tri1 tri2 =
         List.foldl folder Nothing edges1
 
 
+{-| Find a common edge between two triangles
+-}
+hasCommonEdgeSet : Triangle2d -> Triangle2d -> Maybe LineSegment2d
+hasCommonEdgeSet tri1 tri2 =
+    let
+        ( e1, e2, e3 ) =
+            Triangle2d.edges tri1
+
+        ( e4, e5, e6 ) =
+            Triangle2d.edges tri2
+
+        edges1 =
+            [ hashEdge e1, hashEdge e2, hashEdge e3 ]
+                |> Set.fromList
+
+        edges2 =
+            [ hashEdge e4, hashEdge e5, hashEdge e6 ]
+                |> Set.fromList
+
+        common =
+            Set.intersect edges1 edges2
+    in
+        if Set.isEmpty common then
+            Nothing
+        else
+            Set.toList common
+                |> List.head
+                |> Maybe.map (mapBoth Point2d.fromCoordinates >> LineSegment2d.fromEndpoints)
+
+
+hasCommonEdgeFast : Triangle2d -> Triangle2d -> Maybe LineSegment2d
+hasCommonEdgeFast tri1 tri2 =
+    let
+        ( e1, e2, e3 ) =
+            Triangle2d.edges tri1
+
+        ( e4, e5, e6 ) =
+            Triangle2d.edges tri2
+    in
+        if e1 == e4 || e1 == e5 || e1 == e6 then
+            Just e1
+        else if e2 == e4 || e2 == e5 || e2 == e6 then
+            Just e2
+        else if e3 == e4 || e3 == e5 || e3 == e6 then
+            Just e3
+        else
+            Nothing
+
+
 type DegenerateTriangle
     = DegenerateTriangle
 
@@ -194,11 +244,6 @@ calcTriangleAngle triangle =
                    )
 
 
-type OneOrTwo a
-    = One a
-    | Two a a
-
-
 hashEdge : LineSegment2d -> ( ( Float, Float ), ( Float, Float ) )
 hashEdge line =
     let
@@ -223,59 +268,8 @@ hashTriangle triangle =
         List.sort <| List.map Point2d.coordinates [ p1, p2, p3 ]
 
 
-edges : List Triangle2d -> AllDict LineSegment2d (OneOrTwo Triangle2d) EdgeHash
-edges triangles =
-    let
-        folder triangle accum =
-            let
-                ( p1, p2, p3 ) =
-                    (Triangle2d.edges triangle)
-            in
-                [ p1, p2, p3 ]
-                    |> List.foldl (\edge -> AllDict.update edge (updater edge triangle)) accum
-
-        updater k triangle existing =
-            case existing of
-                Nothing ->
-                    Just (One triangle)
-
-                Just (One current) ->
-                    Just (Two current triangle)
-
-                Just (Two t1 t2) ->
-                    if hashTriangle t1 == hashTriangle triangle || hashTriangle t2 == hashTriangle triangle then
-                        Just (Two t1 t2)
-                    else
-                        Debug.crash ("three?" ++ toString ( t1, t2, triangle ))
-    in
-        triangles
-            |> List.map (\tri -> ( tri, () ))
-            |> AllDict.fromList hashTriangle
-            |> AllDict.keys
-            |> List.foldr folder (AllDict.empty hashEdge)
-
-
-sharedEdges : List Triangle2d -> Cache
-sharedEdges triangles =
-    AllDict.foldr
-        (\key value accum ->
-            case value of
-                One _ ->
-                    accum
-
-                Two x y ->
-                    AllDict.insert key ( x, y ) accum
-        )
-        (AllDict.empty hashEdge)
-        (edges triangles)
-
-
 type alias EdgeHash =
     ( ( Float, Float ), ( Float, Float ) )
-
-
-type alias Cache =
-    AllDict LineSegment2d ( Triangle2d, Triangle2d ) EdgeHash
 
 
 flipEdge :
@@ -286,8 +280,8 @@ flipEdge :
     -> Triangle2d
     -> Triangle2d
     -> Triangle2d
-    -> Cache
-    -> Cache
+    -> AdjacencyList
+    -> AdjacencyList
 flipEdge triCount removedEdge newEdge old1 old2 flipped1 flipped2 cache =
     let
         x =
@@ -339,27 +333,12 @@ flipEdge triCount removedEdge newEdge old1 old2 flipped1 flipped2 cache =
 
         folder ( sharedEdge, newTriangle ) accum =
             accum
-                |> checkEdges
-                |> AllDict.update sharedEdge (Maybe.map (mapper sharedEdge newTriangle))
-                |> checkEdges
 
+        -- |> AdjacencyList.update sharedEdge (Maybe.map (mapper sharedEdge newTriangle))
         f cache =
             List.foldl folder cache otherEdges
     in
-        cache
-            |> checkEdges
-            |> doesNotContainTriangle "flipped1" flipped1
-            |> doesNotContainTriangle "flipped2" flipped2
-            |> doesNotContainEdge newEdge
-            |> AllDict.remove removedEdge
-            |> doesNotContainEdge removedEdge
-            |> checkEdges
-            |> f
-            |> triangleCountIs triCount
-            |> doesNotContainTriangle "old1" old1
-            |> doesNotContainTriangle "old2" old2
-            |> AllDict.insert newEdge ( flipped1, flipped2 )
-            |> checkEdges
+        Debug.crash "unused"
 
 
 shareTwoEdges t1 t2 =
@@ -394,30 +373,9 @@ trianglesShareEdge edge t1 t2 =
             Debug.crash "triangles don't  share an edge"
 
 
-checkEdges : Cache -> Cache
-checkEdges =
-    let
-        mapper edge ( t1, t2 ) =
-            trianglesShareEdge edge t1 t2
-    in
-        AllDict.map mapper
-
-
-doesNotContainTriangle : String -> Triangle2d -> Cache -> Cache
-doesNotContainTriangle msg triangle =
-    let
-        mapper edge ( t1, t2 ) =
-            if hashTriangle t1 == hashTriangle triangle || hashTriangle t2 == hashTriangle triangle then
-                Debug.crash ("this triangle should not exist: " ++ msg)
-            else
-                ( t1, t2 )
-    in
-        AllDict.map mapper
-
-
-doesNotContainEdge : LineSegment2d -> Cache -> Cache
+doesNotContainEdge : LineSegment2d -> AdjacencyList -> AdjacencyList
 doesNotContainEdge edge cache =
-    case AllDict.get edge cache of
+    case AdjacencyList.get edge cache of
         Just _ ->
             Debug.crash "edge should not exist"
 
@@ -438,23 +396,6 @@ triangleHasEdge edge triangle =
     List.member (hashEdge edge) (List.map hashEdge (triangleEdges triangle))
 
 
-
-{-
-   wrong =
-       ( Triangle2d ( Point2d ( 330, 240 ), Point2d ( 70, 370 ), Point2d ( 130, 440 ) )
-       , Triangle2d ( Point2d ( 0, 390 ), Point2d ( 130, 440 ), Point2d ( 70, 370 ) )
-       , Triangle2d ( Point2d ( 130, 440 ), Point2d ( 70, 370 ), Point2d ( 30, 750 ) )
-       , Triangle2d ( Point2d ( 120, 530 ), Point2d ( 130, 440 ), Point2d ( 30, 750 ) )
-       , Triangle2d ( Point2d ( 70, 370 ), Point2d ( 120, 530 ), Point2d ( 130, 440 ) )
-       )
--}
-{-
-   wrong =
-          ( LineSegment2d ( Point2d ( -10, -10 ), Point2d ( -10, 10 ) ), ( Triangle2d ( Point2d ( -10, -10 ), Point2d ( 10, 10 ), Point2d ( 10, -10 ) ), Triangle2d ( Point2d ( -20, -10 ), Point2d ( -10, -10 ), Point2d ( -10, 10 ) ) ) ) [
-           ]
--}
-
-
 triangleEdges : Triangle2d -> List LineSegment2d
 triangleEdges triangle =
     let
@@ -464,7 +405,7 @@ triangleEdges triangle =
         [ p1, p2, p3 ]
 
 
-iteration : Cache -> ( Int, Cache )
+iteration : AdjacencyList -> ( Int, AdjacencyList )
 iteration cache =
     let
         folder edge ( t1, t2 ) ( n, accum ) =
@@ -481,7 +422,7 @@ iteration cache =
                             Debug.crash "no shared edge"
 
                 triCount =
-                    List.length (cacheToTriangulation accum)
+                    List.length (AdjacencyList.uniqueTriangles accum)
             in
                 case checkAndFlipTrianglePair t1 t2 of
                     Just ( flipped1, flipped2, newSharedEdge ) ->
@@ -490,13 +431,13 @@ iteration cache =
                     Nothing ->
                         ( n, accum )
     in
-        AllDict.foldl folder ( 0, cache ) cache
+        AdjacencyList.foldr folder ( 0, cache ) cache
 
 
 triangleCountIs n cache =
     let
         size =
-            List.length (cacheToTriangulation cache)
+            List.length (AdjacencyList.uniqueTriangles cache)
     in
         if size == n then
             cache
@@ -504,85 +445,58 @@ triangleCountIs n cache =
             Debug.crash ("size is incorrect, expected " ++ toString n ++ " but got  " ++ toString size)
 
 
-cacheToTriangulation : Cache -> List Triangle2d
-cacheToTriangulation cache =
-    let
-        folder _ ( tri1, tri2 ) accum =
-            accum
-                |> AllDict.insert tri1 ()
-                |> AllDict.insert tri2 ()
-    in
-        cache
-            |> AllDict.foldr folder (AllDict.empty hashTriangle)
-            |> AllDict.keys
-
-
-
-{-
-   flipTriangles triangles =
-       triangles
-           |> sharedEdges
-           |> iteration
-           |> Tuple.mapSecond cacheToTriangulation
--}
-
-
-flipTriangles : List Triangle2d -> ( Int, List Triangle2d )
+flipTriangles : AdjacencyList -> ( Int, AdjacencyList )
 flipTriangles triangles =
-    flipTrianglesHelper ( 0, [] ) (triangles |> sharedEdges)
-        |> Tuple.mapSecond (AllDict.fromList hashEdge >> cacheToTriangulation)
-        |> Tuple.second
-        |> sharedEdges
-        |> flipTrianglesHelper ( 0, [] )
-        |> Tuple.mapSecond (AllDict.fromList hashEdge >> cacheToTriangulation)
+    flipTrianglesHelper ( 0, AdjacencyList.empty ) triangles
 
 
-type alias SetLineSegment2d =
-    AllDict LineSegment2d () EdgeHash
+unwrapAdjacencyList : String -> Result String AdjacencyList -> AdjacencyList
+unwrapAdjacencyList location alist =
+    case alist of
+        Err e ->
+            Debug.crash <| "invalid adjacency list at " ++ location ++ " with error " ++ e
+
+        Ok v ->
+            v
 
 
-flipTrianglesHelper : ( Int, List ( LineSegment2d, ( Triangle2d, Triangle2d ) ) ) -> Cache -> ( Int, List ( LineSegment2d, ( Triangle2d, Triangle2d ) ) )
+flipTrianglesHelper : ( Int, AdjacencyList ) -> AdjacencyList -> ( Int, AdjacencyList )
 flipTrianglesHelper ( accumCount, accum ) remainingTriangles =
-    case remainingTriangles |> AllDict.toList of
+    case remainingTriangles |> AdjacencyList.toList of
         [] ->
-            ( Debug.log "accum count" accumCount, accum )
+            ( accumCount, accum )
 
-        ( edge, ( t1, t2 ) ) :: ts ->
+        ( edge, ( t1, t2 ) ) :: _ ->
             case checkAndFlipTrianglePair t1 t2 of
                 Just ( flipped1, flipped2, newSharedEdge ) ->
                     let
-                        difference =
-                            abs ((Triangle2d.area t1 + Triangle2d.area t2) - (Triangle2d.area flipped1 + Triangle2d.area flipped2))
+                        otherEdges =
+                            (triangleEdges t1 ++ triangleEdges t2)
+                                |> List.filter (\e -> hashEdge e /= hashEdge edge)
 
-                        {-
-                           Debug.crash <|
-                               toString <|
-                                   { error = "wrong flip"
-                                   , difference = difference
-                                   , tri1 = (Triangle2d.area (makeClockwise t1) + Triangle2d.area (makeClockwise t2))
-                                   , tri2 = (Triangle2d.area (makeClockwise flipped1) + Triangle2d.area (makeClockwise flipped2))
-                                   , old = ( t1, t2 )
-                                   , new = ( flipped1, flipped2 )
-                                   }
-                        -}
+                        replacer sharedEdge triangles =
+                            mapBoth (replaceTriangle edge (List.filter (triangleHasEdge sharedEdge) [ flipped1, flipped2 ])) triangles
+
+                        folder otherEdge =
+                            AdjacencyList.update otherEdge (Maybe.map (replacer otherEdge))
                     in
-                        if difference < 1.0e-6 then
-                            flipTrianglesHelper
-                                ( accumCount + 1
-                                , accum
-                                    |> List.map (Tuple.mapSecond (mapBoth (replaceTriangle edge [ flipped1, flipped2 ])))
-                                    |> (\x -> ( newSharedEdge, ( flipped1, flipped2 ) ) :: x)
-                                )
-                                (ts
-                                    |> List.map (Tuple.mapSecond (mapBoth (replaceTriangle edge [ flipped1, flipped2 ])))
-                                    |> (\x -> ( newSharedEdge, ( flipped1, flipped2 ) ) :: x)
-                                    |> AllDict.fromList hashEdge
-                                )
-                        else
-                            flipTrianglesHelper ( accumCount, ( edge, ( t1, t2 ) ) :: accum ) (AllDict.remove edge remainingTriangles)
+                        flipTrianglesHelper
+                            ( accumCount + 1
+                            , List.foldl folder accum otherEdges
+                                |> AdjacencyList.insert newSharedEdge ( flipped1, flipped2 )
+                                |> unwrapAdjacencyList "flipTrianglesHelper insert"
+                            )
+                            (List.foldl folder remainingTriangles otherEdges
+                                |> AdjacencyList.remove edge
+                            )
 
                 Nothing ->
-                    flipTrianglesHelper ( accumCount, ( edge, ( t1, t2 ) ) :: accum ) (AllDict.remove edge remainingTriangles)
+                    flipTrianglesHelper
+                        ( accumCount
+                        , AdjacencyList.insert edge ( t1, t2 ) accum
+                            |> unwrapAdjacencyList "flipTrianglesHelper insert 3"
+                        )
+                        (AdjacencyList.remove edge remainingTriangles)
 
 
 mapBoth f ( a, b ) =
@@ -624,17 +538,12 @@ flipTrianglesUntilFixpoint =
             case flipTriangles triangles of
                 ( 0, newTriangles ) ->
                     -- no progress was made
-                    newTriangles
+                    AdjacencyList.uniqueTriangles newTriangles
 
                 ( n, newTriangles ) ->
-                    let
-                        _ =
-                            -- Debug.log "length before and after" ( List.length triangles, List.length newTriangles )
-                            ()
-                    in
-                        go newTriangles
+                    go newTriangles
     in
-        go
+        go << unwrapAdjacencyList "flipTrianglesUntilFixpoint" << AdjacencyList.fromTriangles
 
 
 {-| Flip triangles until stability is reached (no new triangles are flipped)
@@ -996,7 +905,7 @@ Assumes the point lies outside of the polygon (not sure that is important)
 This works by taking every edge of the hull and checking whether a triangle with the new point forms
 a clockwise triangle. If it does, the edge is visible, otherwise it isn't.
 -}
-visibleEdges : Point2d -> Polygon2d -> List VisibleEdge
+visibleEdges : Point2d -> Polygon2d -> List LineSegment2d
 visibleEdges point polygon =
     Polygon2d.edges polygon
         |> List.filterMap
@@ -1010,9 +919,9 @@ visibleEdges point polygon =
                             |> Triangle2d.clockwiseArea
                 in
                     if area == 0 then
-                        Just (On lineSegment)
+                        Just lineSegment
                     else if area > 0 then
-                        Just (Visible lineSegment)
+                        Just lineSegment
                     else
                         Nothing
             )
@@ -1070,44 +979,8 @@ formTriangles seedTriangle orderedPoints =
             in
                 Polygon2d.convexHull [ p1, p2, p3 ]
 
-        addTriangle point visibleEdge triangles =
-            case visibleEdge of
-                Visible lineSegment ->
-                    constructTriangle point lineSegment :: triangles
-
-                On lineSegment ->
-                    {-
-                       let
-                           _ =
-                               Debug.log "on" ()
-                       in
-                           List.concatMap
-                               (\triangle ->
-                                   if triangleHasEdge lineSegment triangle then
-                                       let
-                                           ( e1, e2 ) =
-                                               LineSegment2d.endpoints lineSegment
-
-                                           ( p1, p2, p3 ) =
-                                               Triangle2d.vertices triangle
-
-                                           otherPoint =
-                                               if p1 /= e1 && p1 /= e2 then
-                                                   p1
-                                               else if p2 /= e1 && p2 /= e2 then
-                                                   p2
-                                               else
-                                                   p3
-                                       in
-                                           [ makeClockwise (Triangle2d.fromVertices ( e1, point, otherPoint ))
-                                           , makeClockwise (Triangle2d.fromVertices ( e2, point, otherPoint ))
-                                           ]
-                                   else
-                                       [ triangle ]
-                               )
-                               triangles
-                    -}
-                    constructTriangle point lineSegment :: triangles
+        addTriangle point lineSegment triangles =
+            constructTriangle point lineSegment :: triangles
 
         folder point ( hull, triangles ) =
             ( hull

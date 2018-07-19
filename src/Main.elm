@@ -210,16 +210,13 @@ initialTriangulation points =
                         newTriangles
 
 
-_ =
-    (List.take 100 randomPoints)
-        |> initialTriangulation
-        |> SweepHull.sharedEdges
-
-
 main =
     let
         n =
             100
+
+        _ =
+            Debug.log "degenerate?" (List.any (\x -> Triangle2d.area x == 0) triangles_)
 
         triangles_ =
             SweepHull.sweepHull (List.take n randomPoints)
@@ -234,11 +231,28 @@ main =
         oldSet =
             List.map hashTriangle oldTriangles_ |> Set.fromList
 
+        newSet =
+            List.map hashTriangle triangles_ |> Set.fromList
+
+        _ =
+            Debug.log "difference" ( Set.diff newSet oldSet, Set.diff oldSet newSet )
+
         mapper old new =
-            if Set.member (hashTriangle new) oldSet then
-                ( drawTriangle "white" old, drawTriangle "white" new )
-            else
-                ( drawTriangle "red" old, drawTriangle "red" new )
+            ( drawTriangle
+                (if Set.member (hashTriangle old) newSet then
+                    "white"
+                 else
+                    "red"
+                )
+                old
+            , drawTriangle
+                (if Set.member (hashTriangle new) oldSet then
+                    "white"
+                 else
+                    "red"
+                )
+                new
+            )
 
         ( oldTriangles, triangles ) =
             List.map2 mapper oldTriangles_ triangles_

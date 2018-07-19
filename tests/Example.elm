@@ -8,6 +8,8 @@ import Triangle2d exposing (Triangle2d)
 import Vector2d exposing (Vector2d)
 import LineSegment2d exposing (LineSegment2d)
 import AllDict
+import Set
+import AdjacencyList
 
 
 epsilon =
@@ -219,28 +221,30 @@ tri6 =
 
 
 randomPoints1 =
-    List.map Point2d.fromCoordinates
-        [ ( 37, 6 )
-        , ( 89, 96 )
-        , ( 96, 41 )
-        , ( 82, 27 )
-        , ( 95, 68 )
-        , ( 100, 57 )
-        , ( 83, 16 )
-        , ( 96, 46 )
-        , ( 97, 35 )
-        , ( 69, 10 )
-        , ( 29, 41 )
-        , ( 50, 59 )
-        , ( 53, 71 )
-        , ( 41, 1 )
-        , ( 86, 85 )
-        , ( 28, 21 )
-        , ( 84, 37 )
-        , ( 9, 56 )
-        , ( 20, 92 )
-        , ( 84, 77 )
-        ]
+    [ ( 37, 6 )
+    , ( 89, 96 )
+    , ( 96, 41 )
+    , ( 82, 27 )
+    , ( 95, 68 )
+    , ( 100, 57 )
+    , ( 83, 16 )
+    , ( 96, 46 )
+    , ( 97, 35 )
+    , ( 69, 10 )
+    , ( 29, 41 )
+    , ( 50, 59 )
+    , ( 53, 71 )
+    , ( 41, 1 )
+    , ( 86, 85 )
+    , ( 28, 21 )
+    , ( 84, 37 )
+    , ( 9, 56 )
+    , ( 20, 92 )
+    , ( 84, 77 )
+    ]
+        |> Set.fromList
+        |> Set.toList
+        |> List.map Point2d.fromCoordinates
 
 
 fromTuplesUnordered =
@@ -981,94 +985,99 @@ triangulator points =
                         newTriangles
 
 
-background =
-    let
-        triangles =
-            triangulator points
 
-        shared =
-            sharedEdges triangles
+{-
+   background =
+       let
+           triangles =
+               triangulator points
 
-        edge1 =
-            LineSegment2d.fromEndpoints
-                ( Point2d.fromCoordinates ( -10, -10 )
-                , Point2d.fromCoordinates ( 10, 10 )
-                )
+           shared : AdjacencyList.AdjacencyList
+           shared =
+               AdjacencyList.fromTriangles triangles
+                   |> SweepHull.unwrapAdjacencyList "tests background shared"
 
-        edge2 =
-            LineSegment2d.fromEndpoints
-                ( Point2d.fromCoordinates ( -10, 10 )
-                , Point2d.fromCoordinates ( 10, -10 )
-                )
+           edge1 =
+               LineSegment2d.fromEndpoints
+                   ( Point2d.fromCoordinates ( -10, -10 )
+                   , Point2d.fromCoordinates ( 10, 10 )
+                   )
 
-        tri1 =
-            Triangle2d.fromVertices
-                ( Point2d.fromCoordinates ( -10, -10 )
-                , Point2d.fromCoordinates ( 10, 10 )
-                , Point2d.fromCoordinates ( 10, -10 )
-                )
+           edge2 =
+               LineSegment2d.fromEndpoints
+                   ( Point2d.fromCoordinates ( -10, 10 )
+                   , Point2d.fromCoordinates ( 10, -10 )
+                   )
 
-        tri2 =
-            Triangle2d.fromVertices
-                ( Point2d.fromCoordinates ( -10, -10 )
-                , Point2d.fromCoordinates ( -10, 10 )
-                , Point2d.fromCoordinates ( 10, 10 )
-                )
+           tri1 =
+               Triangle2d.fromVertices
+                   ( Point2d.fromCoordinates ( -10, -10 )
+                   , Point2d.fromCoordinates ( 10, 10 )
+                   , Point2d.fromCoordinates ( 10, -10 )
+                   )
 
-        tri3 =
-            Triangle2d.fromVertices
-                ( Point2d.fromCoordinates ( -10, -10 )
-                , Point2d.fromCoordinates ( -10, 10 )
-                , Point2d.fromCoordinates ( 10, -10 )
-                )
+           tri2 =
+               Triangle2d.fromVertices
+                   ( Point2d.fromCoordinates ( -10, -10 )
+                   , Point2d.fromCoordinates ( -10, 10 )
+                   , Point2d.fromCoordinates ( 10, 10 )
+                   )
 
-        tri4 =
-            Triangle2d.fromVertices
-                ( Point2d.fromCoordinates ( -10, 10 )
-                , Point2d.fromCoordinates ( 10, 10 )
-                , Point2d.fromCoordinates ( 10, -10 )
-                )
+           tri3 =
+               Triangle2d.fromVertices
+                   ( Point2d.fromCoordinates ( -10, -10 )
+                   , Point2d.fromCoordinates ( -10, 10 )
+                   , Point2d.fromCoordinates ( 10, -10 )
+                   )
 
-        edge3 =
-            LineSegment2d.fromEndpoints
-                ( Point2d.fromCoordinates ( -10, -10 )
-                , Point2d.fromCoordinates ( -10, 10 )
-                )
+           tri4 =
+               Triangle2d.fromVertices
+                   ( Point2d.fromCoordinates ( -10, 10 )
+                   , Point2d.fromCoordinates ( 10, 10 )
+                   , Point2d.fromCoordinates ( 10, -10 )
+                   )
 
-        tri5 =
-            Triangle2d.fromVertices
-                ( Point2d.fromCoordinates ( -20, -10 )
-                , Point2d.fromCoordinates ( -10, -10 )
-                , Point2d.fromCoordinates ( -10, 10 )
-                )
-    in
-        Test.describe "flipping edges"
-            [ Test.test "3" <|
-                \_ ->
-                    let
-                        shared =
-                            AllDict.fromList hashEdge
-                                [ ( edge1, ( tri1, tri2 ) )
-                                , ( edge3, ( tri2, tri5 ) )
-                                ]
+           edge3 =
+               LineSegment2d.fromEndpoints
+                   ( Point2d.fromCoordinates ( -10, -10 )
+                   , Point2d.fromCoordinates ( -10, 10 )
+                   )
 
-                        expected =
-                            AllDict.fromList hashEdge
-                                [ ( edge2, ( tri3, tri4 ) )
-                                , ( edge3, ( tri3, tri5 ) )
-                                ]
-                    in
-                        flipEdge 2 edge1 edge2 tri1 tri2 tri3 tri4 shared
-                            |> Expect.equal expected
-            , Test.test "1" <|
-                \_ ->
-                    flipEdge 0 edge1 edge2 tri1 tri2 tri3 tri4 (AllDict.singleton hashEdge edge1 ( tri1, tri2 ))
-                        |> Expect.equal (AllDict.singleton hashEdge edge2 ( tri3, tri4 ))
-            , Test.test "2" <|
-                \_ ->
-                    flipEdge 0 edge2 edge1 tri3 tri4 tri1 tri2 (AllDict.singleton hashEdge edge2 ( tri3, tri4 ))
-                        |> Expect.equal (AllDict.singleton hashEdge edge1 ( tri1, tri2 ))
-            ]
+           tri5 =
+               Triangle2d.fromVertices
+                   ( Point2d.fromCoordinates ( -20, -10 )
+                   , Point2d.fromCoordinates ( -10, -10 )
+                   , Point2d.fromCoordinates ( -10, 10 )
+                   )
+       in
+           Test.describe "flipping edges"
+               [ Test.test "3" <|
+                   \_ ->
+                       let
+                           shared =
+                               AdjacencyList.fromList
+                                   [ ( edge1, ( tri1, tri2 ) )
+                                   , ( edge3, ( tri2, tri5 ) )
+                                   ]
+
+                           expected =
+                               AdjacencyList.fromList
+                                   [ ( edge2, ( tri3, tri4 ) )
+                                   , ( edge3, ( tri3, tri5 ) )
+                                   ]
+                       in
+                           Result.map (flipEdge 2 edge1 edge2 tri1 tri2 tri3 tri4) shared
+                               |> Expect.equal expected
+               , Test.test "1" <|
+                   \_ ->
+                       flipEdge 0 edge1 edge2 tri1 tri2 tri3 tri4 (AllDict.singleton hashEdge edge1 ( tri1, tri2 ))
+                           |> Expect.equal (AllDict.singleton hashEdge edge2 ( tri3, tri4 ))
+               , Test.test "2" <|
+                   \_ ->
+                       flipEdge 0 edge2 edge1 tri3 tri4 tri1 tri2 (AllDict.singleton hashEdge edge2 ( tri3, tri4 ))
+                           |> Expect.equal (AllDict.singleton hashEdge edge0 ( tri1, tri2 ))
+               ]
+-}
 
 
 c =
