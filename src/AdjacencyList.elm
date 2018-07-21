@@ -22,6 +22,8 @@ module AdjacencyList
         , toProofList
         , readProof
         , sortOnShared
+        , keySet
+        , getProof
         )
 
 import AllDict exposing (AllDict)
@@ -110,6 +112,21 @@ get edge (AdjacencyList dict) =
     AllDict.get edge dict
 
 
+getProof : LineSegment2d -> AdjacencyList -> Maybe AdjacencyProof
+getProof edge (AdjacencyList dict) =
+    AllDict.get edge dict
+        |> Maybe.map
+            (\value ->
+                AdjacencyProof
+                    { tri1 = value.tri1
+                    , tri2 = value.tri2
+                    , otherVertex1 = value.otherVertex1
+                    , otherVertex2 = value.otherVertex2
+                    , sharedEdge = edge
+                    }
+            )
+
+
 keys : AdjacencyList -> List LineSegment2d
 keys (AdjacencyList dict) =
     AllDict.keys dict
@@ -129,6 +146,11 @@ fromList list =
 toList : AdjacencyList -> List ( LineSegment2d, AdjacentTriangles )
 toList (AdjacencyList dict) =
     AllDict.toList dict
+
+
+keySet : AdjacencyList -> AllDict LineSegment2d () Edge
+keySet (AdjacencyList dict) =
+    AllDict.map (\_ _ -> ()) dict
 
 
 toProofList : AdjacencyList -> List AdjacencyProof

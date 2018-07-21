@@ -9,6 +9,7 @@ import Polygon2d exposing (Polygon2d)
 import Circle2d
 import AdjacencyList exposing (AdjacencyList, AdjacencyProof)
 import Set
+import AllDict exposing (AllDict)
 
 
 {-| S-hull: a fast sweep-hull routine for Delaunay triangulation by David Sinclair
@@ -473,75 +474,67 @@ flipTrianglesHelperWorking ( accumCount, accum ) remainingTriangles =
                             (AdjacencyList.remove edge remainingTriangles)
 
 
+type alias SharedEdgeSet =
+    AllDict LineSegment2d () ( ( Float, Float ), ( Float, Float ) )
+
+
 flipTrianglesHelper : ( Int, AdjacencyList ) -> AdjacencyList -> ( Int, AdjacencyList )
 flipTrianglesHelper ( accumCount, accum ) remainingTriangles =
-    case remainingTriangles |> AdjacencyList.toProofList of
+    case AdjacencyList.keys remainingTriangles of
         [] ->
             ( accumCount, accum )
 
-        proof :: _ ->
-            let
-                ( edge, tris ) =
-                    AdjacencyList.readProof proof
+        edge :: _ ->
+            case AdjacencyList.getProof edge remainingTriangles of
+                Nothing ->
+                    Debug.crash "unknown edge"
 
-                ( t1, t2 ) =
-                    ( tris.tri1, tris.tri2 )
-            in
-                case checkAndFlipTrianglePairNew proof of
-                    Just newProof ->
-                        let
-                            ( newSharedEdge, newTris ) =
-                                AdjacencyList.readProof newProof
+                Just proof ->
+                    let
+                        ( edge, tris ) =
+                            AdjacencyList.readProof proof
+                    in
+                        case checkAndFlipTrianglePairNew proof of
+                            Just flippedProof ->
+                                let
+                                    ( newSharedEdge, newTris ) =
+                                        AdjacencyList.readProof flippedProof
 
-                            ( flipped1, flipped2 ) =
-                                ( newTris.tri1, newTris.tri2 )
+                                    newFlippedTriangles =
+                                        [ newTris.tri1, newTris.tri2 ]
 
-                            _ =
-                                case checkAndFlipTrianglePair t1 t2 of
-                                    Just ( x1, x2, otherSharedEdge ) ->
-                                        if not (x1 == flipped1 && x2 == flipped2 && otherSharedEdge == newSharedEdge) then
-                                            Debug.crash "not actually the same"
-                                        else
-                                            ()
+                                    otherEdges =
+                                        (triangleEdges tris.tri1 ++ triangleEdges tris.tri2)
+                                            |> List.filter (\e -> hashEdge e /= hashEdge edge)
 
-                                    Nothing ->
-                                        let
-                                            newProof =
-                                                AdjacencyList.proofAdjacency t1 t2
+                                    replacer sharedEdge triangles =
+                                        mapBoth (replaceTriangle edge (List.filter (triangleHasEdge sharedEdge) newFlippedTriangles)) ( triangles.tri1, triangles.tri2 )
 
-                                            new =
-                                                newProof
-                                                    |> Maybe.map checkAndFlipTrianglePairNew
-                                        in
-                                            Debug.crash ("actually all is wrong" ++ toString ( t1, t2, proof, checkAndFlipTrianglePairNew proof, checkAndFlipTrianglePair t1 t2, new, newProof ))
+                                    folder otherEdge =
+                                        AdjacencyList.update otherEdge (Maybe.map (replacer otherEdge))
 
-                            otherEdges =
-                                (triangleEdges t1 ++ triangleEdges t2)
-                                    |> List.filter (\e -> hashEdge e /= hashEdge edge)
+                                    newRemainingTriangles =
+                                        otherEdges
+                                            |> List.foldl folder remainingTriangles
+                                            |> AdjacencyList.remove edge
+                                in
+                                    flipTrianglesHelper
+                                        ( accumCount + 1
+                                        , List.foldl folder accum otherEdges
+                                            |> AdjacencyList.insertProof flippedProof
+                                        )
+                                        newRemainingTriangles
 
-                            replacer sharedEdge triangles =
-                                mapBoth (replaceTriangle edge (List.filter (triangleHasEdge sharedEdge) [ flipped1, flipped2 ])) ( triangles.tri1, triangles.tri2 )
-
-                            folder otherEdge =
-                                AdjacencyList.update otherEdge (Maybe.map (replacer otherEdge))
-                        in
-                            flipTrianglesHelper
-                                ( accumCount + 1
-                                , List.foldl folder accum otherEdges
-                                    |> AdjacencyList.insert newSharedEdge ( flipped1, flipped2 )
-                                    |> unwrapAdjacencyList "flipTrianglesHelper insert"
-                                )
-                                (List.foldl folder remainingTriangles otherEdges
-                                    |> AdjacencyList.remove edge
-                                )
-
-                    Nothing ->
-                        flipTrianglesHelper
-                            ( accumCount
-                            , AdjacencyList.insert edge ( t1, t2 ) accum
-                                |> unwrapAdjacencyList "flipTrianglesHelper insert 3"
-                            )
-                            (AdjacencyList.remove edge remainingTriangles)
+                            Nothing ->
+                                let
+                                    newRemainingTriangles =
+                                        AdjacencyList.remove edge remainingTriangles
+                                in
+                                    flipTrianglesHelper
+                                        ( accumCount
+                                        , AdjacencyList.insertProof proof accum
+                                        )
+                                        (newRemainingTriangles)
 
 
 mapBoth f ( a, b ) =
@@ -825,51 +818,47 @@ checkAndFlipTrianglePair tri1 tri2 =
             Nothing
 
         Just ( triOrdered1, triOrdered2, shared ) ->
-            let
-                _ =
-                    Debug.log "old: triangles" ( triOrdered1, triOrdered2 )
-            in
-                case triangulation1 triOrdered1 triOrdered2 of
-                    Err _ ->
-                        Debug.log "triangulation 1" Nothing
+            case triangulation1 triOrdered1 triOrdered2 of
+                Err _ ->
+                    Nothing
 
-                    Ok ( t1, t3 ) ->
-                        let
-                            flipDegenerateTri =
-                                (t1 == pi || t3 == pi)
+                Ok ( t1, t3 ) ->
+                    let
+                        flipDegenerateTri =
+                            (t1 == pi || t3 == pi)
 
-                            angTotal =
-                                t1 + t3
+                        angTotal =
+                            t1 + t3
 
-                            flipForDelaunay =
-                                angTotal > pi
-                        in
-                            if flipDegenerateTri || flipForDelaunay then
-                                -- print("Flip possibly required", angTotal, triOrdered1, triOrdered2)
-                                case triangulation2 triOrdered1 triOrdered2 of
-                                    Err _ ->
-                                        Debug.log "triangulation 2" Nothing
+                        flipForDelaunay =
+                            angTotal > pi
+                    in
+                        if flipDegenerateTri || flipForDelaunay then
+                            -- print("Flip possibly required", angTotal, triOrdered1, triOrdered2)
+                            case triangulation2 triOrdered1 triOrdered2 of
+                                Err _ ->
+                                    Nothing
 
-                                    Ok ( ( t2, flipped1 ), ( t4, flipped2 ), newShared ) ->
-                                        -- t1 + t2 + t3 + t4 == 2 * pi
-                                        if flipDegenerateTri && (t2 > pi || t4 > pi) then
-                                            -- Flipping would create an overlap
-                                            Debug.log "flipDegenerateTri" Nothing
-                                        else if t2 == pi || t4 == pi then
-                                            -- Flipping would create triangle of zero size
-                                            Debug.log "flipping would create triangle of zero size" Nothing
-                                        else
-                                            let
-                                                flipAngTotal =
-                                                    t2 + t4
-                                            in
-                                                if flipForDelaunay && flipAngTotal >= angTotal then
-                                                    -- No improvement when flipped, so abort flip
-                                                    Debug.log ("old: no improvement " ++ toString ( flipForDelaunay, flipAngTotal, angTotal )) Nothing
-                                                else
-                                                    Just ( flipped1, flipped2, newShared )
-                            else
-                                Debug.log "old: else" Nothing
+                                Ok ( ( t2, flipped1 ), ( t4, flipped2 ), newShared ) ->
+                                    -- t1 + t2 + t3 + t4 == 2 * pi
+                                    if flipDegenerateTri && (t2 > pi || t4 > pi) then
+                                        -- Flipping would create an overlap
+                                        Nothing
+                                    else if t2 == pi || t4 == pi then
+                                        -- Flipping would create triangle of zero size
+                                        Nothing
+                                    else
+                                        let
+                                            flipAngTotal =
+                                                t2 + t4
+                                        in
+                                            if flipForDelaunay && flipAngTotal >= angTotal then
+                                                -- No improvement when flipped, so abort flip
+                                                Nothing
+                                            else
+                                                Just ( flipped1, flipped2, newShared )
+                        else
+                            Nothing
 
 
 {-| Find the initial triangle. This can fail if

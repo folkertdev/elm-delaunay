@@ -11,7 +11,7 @@ import Set
 
 main : BenchmarkProgram
 main =
-    program commonEdge
+    program flipTriangles
 
 
 commonEdge : Benchmark
