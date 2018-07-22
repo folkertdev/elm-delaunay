@@ -211,7 +211,7 @@ initialTriangulation points =
 
 
 main =
-    main2 ()
+    main1 ()
 
 
 main1 _ =

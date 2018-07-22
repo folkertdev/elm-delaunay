@@ -8,11 +8,31 @@ import Point2d exposing (Point2d)
 import Triangle2d exposing (Triangle2d)
 import Polygon2d exposing (Polygon2d)
 import Set
+import AdjacencyList
 
 
 main : BenchmarkProgram
 main =
-    program sharesEdge
+    program findOtherEdgeBenchmark
+
+
+findOtherEdgeBenchmark =
+    let
+        tri =
+            Triangle2d.fromVertices
+                ( Point2d.fromCoordinates ( 960, 758 )
+                , Point2d.fromCoordinates ( 994, 782 )
+                , Point2d.fromCoordinates ( 100, 200 )
+                )
+    in
+        describe "SweepHull"
+            [ -- nest as many descriptions as you like
+              Benchmark.compare "sharesEdge shared"
+                "old"
+                (\_ -> AdjacencyList.hashTriangleOld tri)
+                "new"
+                (\_ -> AdjacencyList.hashTriangle tri)
+            ]
 
 
 sweepHull : Benchmark

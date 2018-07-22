@@ -137,9 +137,9 @@ type alias SharedEdgeSet =
     AllDict LineSegment2d () ( ( Float, Float ), ( Float, Float ) )
 
 
-flipTriangles : AdjacencyList -> AdjacencyList -> ( Int, AdjacencyList, SharedEdgeSet )
-flipTriangles checkedTriangles uncheckedTriangles =
-    flipTrianglesHelper ( 0, checkedTriangles, AllDict.empty hashEdge ) uncheckedTriangles
+flipTriangles : AdjacencyList -> AdjacencyList
+flipTriangles triangles =
+    flipTrianglesHelper AdjacencyList.empty triangles
 
 
 {-| Actually perform flipping
@@ -153,11 +153,11 @@ the flipped triangles. We also store the triangles that now shared an edge with 
 "dirty edges": they need to be checked for flipping in the next iteration.
 
 -}
-flipTrianglesHelper : ( Int, AdjacencyList, SharedEdgeSet ) -> AdjacencyList -> ( Int, AdjacencyList, SharedEdgeSet )
-flipTrianglesHelper ( accumCount, accum, dirtyEdges ) remainingTriangles =
+flipTrianglesHelper : AdjacencyList -> AdjacencyList -> AdjacencyList
+flipTrianglesHelper accum remainingTriangles =
     case AdjacencyList.toProofList remainingTriangles of
         [] ->
-            ( accumCount, accum, dirtyEdges )
+            accum
 
         proof :: _ ->
             let
@@ -187,34 +187,53 @@ flipTrianglesHelper ( accumCount, accum, dirtyEdges ) remainingTriangles =
                             replacer possibleReplacement triangles =
                                 mapBoth (replaceTriangle edge possibleReplacement) ( triangles.tri1, triangles.tri2 )
 
-                            folder otherEdge accum =
+                            folder otherEdge ( removed, accum ) =
                                 -- we know there is at most one replacement
                                 case List.filter (triangleHasEdge otherEdge) newFlippedTriangles of
                                     possibleReplacement :: _ ->
-                                        AdjacencyList.update otherEdge (Maybe.map (replacer possibleReplacement)) accum
+                                        case AdjacencyList.getProof otherEdge accum of
+                                            Nothing ->
+                                                ( AdjacencyList.update otherEdge (Maybe.map (replacer possibleReplacement)) removed
+                                                , accum
+                                                )
+
+                                            Just proof ->
+                                                let
+                                                    ( _, triangles ) =
+                                                        AdjacencyList.readProof proof
+                                                in
+                                                    case ( replaceTriangleMaybe edge possibleReplacement triangles.tri1, replaceTriangleMaybe edge possibleReplacement triangles.tri2 ) of
+                                                        ( Nothing, Nothing ) ->
+                                                            ( removed, accum )
+
+                                                        ( newTri1_, newTri2_ ) ->
+                                                            let
+                                                                newTri1 =
+                                                                    newTri1_ |> Maybe.withDefault triangles.tri1
+
+                                                                newTri2 =
+                                                                    newTri2_ |> Maybe.withDefault triangles.tri2
+                                                            in
+                                                                ( AdjacencyList.insert otherEdge ( newTri1, newTri2 ) removed |> AdjacencyList.unsafeUnwrap "insert"
+                                                                , AdjacencyList.remove otherEdge accum
+                                                                )
 
                                     _ ->
-                                        accum
+                                        ( removed, accum )
 
-                            newRemainingTriangles =
-                                otherEdges
-                                    |> List.foldl folder remainingTriangles
-                                    |> AdjacencyList.remove edge
+                            ( newerRemainingTriangles, valid ) =
+                                List.foldl folder ( remainingTriangles, accum ) otherEdges
+                                    |> Tuple.mapFirst (AdjacencyList.remove edge)
                         in
                             flipTrianglesHelper
-                                ( accumCount + 1
-                                , List.foldl folder accum otherEdges
+                                (valid
                                     |> AdjacencyList.insertProof flippedProof
-                                , List.foldl (\e -> AllDict.insert e ()) dirtyEdges otherEdges
                                 )
-                                newRemainingTriangles
+                                newerRemainingTriangles
 
                     Nothing ->
                         flipTrianglesHelper
-                            ( accumCount
-                            , AdjacencyList.insertProof proof accum
-                            , dirtyEdges
-                            )
+                            (AdjacencyList.insertProof proof accum)
                             (AdjacencyList.remove edge remainingTriangles)
 
 
@@ -255,6 +274,19 @@ replaceTriangle removedEdge newTriangle existingTriangle =
         existingTriangle
 
 
+{-| Replace a triangle by its flipped version if it contains a removed edge
+-}
+replaceTriangleMaybe : LineSegment2d -> Triangle2d -> Triangle2d -> Maybe Triangle2d
+replaceTriangleMaybe removedEdge newTriangle existingTriangle =
+    if triangleHasEdge removedEdge existingTriangle then
+        if sharesEdge newTriangle existingTriangle then
+            Just newTriangle
+        else
+            Nothing
+    else
+        Nothing
+
+
 {-| Flip triangles until stability is reached (no new triangles are flipped)
 -}
 flipTrianglesUntilFixpoint : List Triangle2d -> List Triangle2d
@@ -264,21 +296,8 @@ flipTrianglesUntilFixpoint rawTriangles =
             rawTriangles
 
         Ok initial ->
-            let
-                go checkedTriangles uncheckedTriangles =
-                    case flipTriangles checkedTriangles uncheckedTriangles of
-                        ( 0, newTriangles, _ ) ->
-                            -- no progress was made
-                            AdjacencyList.uniqueTriangles newTriangles
-
-                        ( n, newTriangles, dirtyEdges ) ->
-                            let
-                                ( dirty, clean ) =
-                                    AdjacencyList.partition (\e _ -> AllDict.member e dirtyEdges) newTriangles
-                            in
-                                go clean dirty
-            in
-                go AdjacencyList.empty initial
+            flipTriangles initial
+                |> AdjacencyList.uniqueTriangles
 
 
 {-| Given two triangles that share an edge, we obtain a quad. There are two ways the quad

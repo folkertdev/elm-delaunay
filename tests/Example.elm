@@ -10,6 +10,7 @@ import LineSegment2d exposing (LineSegment2d)
 import AllDict
 import Set
 import AdjacencyList
+import Fuzz
 
 
 epsilon =
@@ -1117,250 +1118,308 @@ triangulator points =
                    new
                        |> Expect.equal old
 -}
+{-
+   checkAndFlipTrianglePairTest =
+       let
+           proof1 : Triangle2d -> Triangle2d -> AdjacencyList.AdjacencyProof
+           proof1 tri1 tri2 =
+               case AdjacencyList.proofAdjacency tri1 tri2 of
+                   Nothing ->
+                       Debug.crash ""
+
+                   Just v ->
+                       v
+
+           verifyEqual name tri1 tri2 =
+               Test.test name <|
+                   \_ ->
+                       (checkAndFlipTrianglePairNew (proof1 tri1 tri2) |> Maybe.map unwrap)
+                           |> Expect.equal (checkAndFlipTrianglePair tri1 tri2)
+
+           verifyEqualStart name tri1 tri2 =
+               Test.test ("equal start " ++ name) <|
+                   \_ ->
+                       let
+                           proof =
+                               proof1 tri1 tri2
+
+                           newWay =
+                               proof
+                                   |> AdjacencyList.sortOnShared
+                                   |> AdjacencyList.readProof
+                                   |> (\( edge, tris ) -> ( tris.tri1, tris.tri2, edge ))
+
+                           oldWay =
+                               sortOnShared tri1 tri2
+                                   |> (\v ->
+                                           case v of
+                                               Nothing ->
+                                                   Debug.crash ""
+
+                                               Just ( triOrdered1, triOrdered2, shared ) ->
+                                                   ( triOrdered1, triOrdered2, shared )
+                                      )
+                       in
+                           newWay
+                               |> Expect.equal oldWay
+
+           equalTriangulation1 name tri1 tri2 =
+               Test.test ("equal triangulation 1 for " ++ name) <|
+                   \_ ->
+                       let
+                           proof =
+                               proof1 tri1 tri2
+
+                           newWay =
+                               proof
+                                   |> AdjacencyList.sortOnShared
+                                   |> AdjacencyList.triangulation1
+
+                           oldWay =
+                               sortOnShared tri1 tri2
+                                   |> Maybe.map (\( a, b, c ) -> ( a, b ))
+                                   |> Maybe.map (uncurry SweepHull.triangulation1)
+                                   |> Maybe.map
+                                       (\v ->
+                                           case v of
+                                               Err _ ->
+                                                   Debug.crash ""
+
+                                               Ok e ->
+                                                   e
+                                       )
+                       in
+                           newWay
+                               |> Expect.equal oldWay
+
+           equalTriangulation2 name tri1 tri2 =
+               Test.test ("equal triangulation 2 for " ++ name) <|
+                   \_ ->
+                       let
+                           proof =
+                               proof1 tri1 tri2
+
+                           newWay =
+                               proof
+                                   |> AdjacencyList.sortOnShared
+                                   |> AdjacencyList.triangulation2
+                                   |> Maybe.map
+                                       (\( a, b, newProof ) ->
+                                           let
+                                               ( newShared, tris ) =
+                                                   AdjacencyList.readProof newProof
+                                           in
+                                               ( a, b, tris.tri1, tris.tri2, newShared )
+                                       )
+
+                           oldWay =
+                               sortOnShared tri1 tri2
+                                   |> Maybe.map (\( a, b, c ) -> ( a, b ))
+                                   |> Maybe.map (uncurry SweepHull.triangulation2)
+                                   |> Maybe.map
+                                       (\v ->
+                                           case v of
+                                               Err _ ->
+                                                   Debug.crash ""
+
+                                               Ok ( ( a, t1 ), ( b, t2 ), newShared ) ->
+                                                   ( a, b, t1, t2, newShared )
+                                       )
+                       in
+                           newWay
+                               |> Expect.equal oldWay
+
+           verifyEqualSharedEdge name tri1 tri2 =
+               Test.test ("equal shared edge for " ++ name) <|
+                   \_ ->
+                       let
+                           proof =
+                               proof1 tri1 tri2
+
+                           newWay =
+                               proof
+                                   |> AdjacencyList.readProof
+                                   |> (\( edge, tris ) -> edge)
+
+                           oldWay =
+                               hasCommonEdge tri1 tri2
+                                   |> (\v ->
+                                           case v of
+                                               Nothing ->
+                                                   Debug.crash ""
+
+                                               Just e ->
+                                                   e
+                                      )
+                       in
+                           newWay
+                               |> Expect.equal oldWay
+
+           verifyEqualSplit name tri1 tri2 =
+               Test.test ("equal split for " ++ name) <|
+                   \_ ->
+                       let
+                           proof =
+                               proof1 tri1 tri2
+
+                           newWay =
+                               proof
+                                   |> AdjacencyList.readProof
+                                   |> (\( edge, tris ) -> ( edge, tris.otherVertex1, tris.otherVertex2 ))
+
+                           oldWay =
+                               splitOnShared tri1 tri2
+                                   |> (\v ->
+                                           case v of
+                                               Nothing ->
+                                                   Debug.crash ""
+
+                                               Just e ->
+                                                   e
+                                      )
+                       in
+                           newWay
+                               |> Expect.equal ((\{ shared, other1, other2 } -> ( shared, other1, other2 )) oldWay)
+
+           equalFlip name tri1 tri2 =
+               Test.test ("equal flip for " ++ name) <|
+                   \_ ->
+                       let
+                           proof =
+                               proof1 tri1 tri2
+
+                           newWay =
+                               proof
+                                   |> SweepHull.checkAndFlipTrianglePairNew
+                                   |> Maybe.map (AdjacencyList.readProof >> \( edge, tris ) -> ( tris.tri1, tris.tri2, edge ))
+
+                           oldWay =
+                               SweepHull.checkAndFlipTrianglePair tri1 tri2
+                       in
+                           newWay
+                               |> Expect.equal oldWay
+
+           unwrap proof =
+               AdjacencyList.readProof proof
+                   |> (\( sharedEdge, { tri1, tri2 } ) ->
+                           ( tri1, tri2, sharedEdge )
+                      )
+
+           example1 =
+               ( tri1, tri2 )
+
+           example2 =
+               ( fromTuplesUnordered ( ( 670, 450 ), ( 520, 780 ), ( 610, 540 ) )
+               , fromTuplesUnordered ( ( 520, 780 ), ( 670, 450 ), ( 520, 810 ) )
+               )
+
+           example3 =
+               ( fromTuplesUnordered ( ( 610, 540 ), ( 520, 810 ), ( 670, 450 ) )
+               , fromTuplesUnordered ( ( 520, 810 ), ( 610, 540 ), ( 520, 780 ) )
+               )
+
+           example4 =
+               ( fromTuplesUnordered ( ( 0, 390 ), ( 70, 370 ), ( 10, 350 ) )
+               , fromTuplesUnordered ( ( 10, 350 ), ( 50, 160 ), ( 0, 390 ) )
+               )
+       in
+           Test.describe "checkAndFlipTrianglePair"
+               [ uncurry (verifyEqual "example 1") example1
+               , uncurry (verifyEqual "example 2") example2
+               , uncurry (verifyEqual "example 3") example3
+               , uncurry (verifyEqualStart "example 1") example1
+               , uncurry (verifyEqualStart "example 2") example2
+               , uncurry (verifyEqualStart "example 3") example3
+               , uncurry (verifyEqualSharedEdge "example 1") example1
+               , uncurry (verifyEqualSharedEdge "example 2") example2
+               , uncurry (verifyEqualSharedEdge "example 3") example3
+               , uncurry (equalTriangulation1 "example 1") example1
+               , uncurry (equalTriangulation1 "example 2") example2
+               , uncurry (equalTriangulation1 "example 3") example3
+               , uncurry (equalTriangulation1 "example 4") example4
+               , uncurry (equalTriangulation2 "example 1") example1
+               , uncurry (equalTriangulation2 "example 2") example2
+               , uncurry (equalTriangulation2 "example 3") example3
+               , uncurry (equalTriangulation2 "example 4") example4
+               , uncurry (verifyEqualSplit "example 1") example1
+               , uncurry (verifyEqualSplit "example 2") example2
+               , uncurry (verifyEqualSplit "example 3") example3
+               , uncurry (verifyEqualSplit "example 4") example4
+               , uncurry (equalFlip "example 1") example1
+               , uncurry (equalFlip "example 2") example2
+               , uncurry (equalFlip "example 3") example3
+               , uncurry (equalFlip "example 4") example4
+               , Test.test "example 4 old " <|
+                   \_ ->
+                       let
+                           ( tri1, tri2 ) =
+                               example4
+                       in
+                           SweepHull.checkAndFlipTrianglePair tri1 tri2
+                               |> Expect.equal Nothing
+               , Test.test "example 4 new " <|
+                   \_ ->
+                       proof1 tri1 tri2
+                           |> SweepHull.checkAndFlipTrianglePairNew
+                           |> Maybe.map (AdjacencyList.readProof >> \( edge, tris ) -> ( tris.tri1, tris.tri2, edge ))
+                           |> Expect.equal Nothing
+               ]
+-}
 
 
-checkAndFlipTrianglePairTest =
+hashEdgeTest =
     let
-        proof1 : Triangle2d -> Triangle2d -> AdjacencyList.AdjacencyProof
-        proof1 tri1 tri2 =
-            case AdjacencyList.proofAdjacency tri1 tri2 of
-                Nothing ->
-                    Debug.crash ""
+        hashTriangleOld : Triangle2d -> List ( Float, Float )
+        hashTriangleOld triangle =
+            let
+                ( q1, q2, q3 ) =
+                    Triangle2d.vertices triangle
+            in
+                List.sort <| List.map Point2d.coordinates [ q1, q2, q3 ]
 
-                Just v ->
-                    v
+        fuzzPoint =
+            Fuzz.map2 (,) Fuzz.float Fuzz.float
+                |> Fuzz.map Point2d.fromCoordinates
 
-        verifyEqual name tri1 tri2 =
-            Test.test name <|
-                \_ ->
-                    (checkAndFlipTrianglePairNew (proof1 tri1 tri2) |> Maybe.map unwrap)
-                        |> Expect.equal (checkAndFlipTrianglePair tri1 tri2)
+        fuzzTriangle =
+            Fuzz.map3 (,,) fuzzPoint fuzzPoint fuzzPoint
+                |> Fuzz.map Triangle2d.fromVertices
 
-        verifyEqualStart name tri1 tri2 =
-            Test.test ("equal start " ++ name) <|
-                \_ ->
-                    let
-                        proof =
-                            proof1 tri1 tri2
-
-                        newWay =
-                            proof
-                                |> AdjacencyList.sortOnShared
-                                |> AdjacencyList.readProof
-                                |> (\( edge, tris ) -> ( tris.tri1, tris.tri2, edge ))
-
-                        oldWay =
-                            sortOnShared tri1 tri2
-                                |> (\v ->
-                                        case v of
-                                            Nothing ->
-                                                Debug.crash ""
-
-                                            Just ( triOrdered1, triOrdered2, shared ) ->
-                                                ( triOrdered1, triOrdered2, shared )
-                                   )
-                    in
-                        newWay
-                            |> Expect.equal oldWay
-
-        equalTriangulation1 name tri1 tri2 =
-            Test.test ("equal triangulation 1 for " ++ name) <|
-                \_ ->
-                    let
-                        proof =
-                            proof1 tri1 tri2
-
-                        newWay =
-                            proof
-                                |> AdjacencyList.sortOnShared
-                                |> AdjacencyList.triangulation1
-
-                        oldWay =
-                            sortOnShared tri1 tri2
-                                |> Maybe.map (\( a, b, c ) -> ( a, b ))
-                                |> Maybe.map (uncurry SweepHull.triangulation1)
-                                |> Maybe.map
-                                    (\v ->
-                                        case v of
-                                            Err _ ->
-                                                Debug.crash ""
-
-                                            Ok e ->
-                                                e
-                                    )
-                    in
-                        newWay
-                            |> Expect.equal oldWay
-
-        equalTriangulation2 name tri1 tri2 =
-            Test.test ("equal triangulation 2 for " ++ name) <|
-                \_ ->
-                    let
-                        proof =
-                            proof1 tri1 tri2
-
-                        newWay =
-                            proof
-                                |> AdjacencyList.sortOnShared
-                                |> AdjacencyList.triangulation2
-                                |> Maybe.map
-                                    (\( a, b, newProof ) ->
-                                        let
-                                            ( newShared, tris ) =
-                                                AdjacencyList.readProof newProof
-                                        in
-                                            ( a, b, tris.tri1, tris.tri2, newShared )
-                                    )
-
-                        oldWay =
-                            sortOnShared tri1 tri2
-                                |> Maybe.map (\( a, b, c ) -> ( a, b ))
-                                |> Maybe.map (uncurry SweepHull.triangulation2)
-                                |> Maybe.map
-                                    (\v ->
-                                        case v of
-                                            Err _ ->
-                                                Debug.crash ""
-
-                                            Ok ( ( a, t1 ), ( b, t2 ), newShared ) ->
-                                                ( a, b, t1, t2, newShared )
-                                    )
-                    in
-                        newWay
-                            |> Expect.equal oldWay
-
-        verifyEqualSharedEdge name tri1 tri2 =
-            Test.test ("equal shared edge for " ++ name) <|
-                \_ ->
-                    let
-                        proof =
-                            proof1 tri1 tri2
-
-                        newWay =
-                            proof
-                                |> AdjacencyList.readProof
-                                |> (\( edge, tris ) -> edge)
-
-                        oldWay =
-                            hasCommonEdge tri1 tri2
-                                |> (\v ->
-                                        case v of
-                                            Nothing ->
-                                                Debug.crash ""
-
-                                            Just e ->
-                                                e
-                                   )
-                    in
-                        newWay
-                            |> Expect.equal oldWay
-
-        verifyEqualSplit name tri1 tri2 =
-            Test.test ("equal split for " ++ name) <|
-                \_ ->
-                    let
-                        proof =
-                            proof1 tri1 tri2
-
-                        newWay =
-                            proof
-                                |> AdjacencyList.readProof
-                                |> (\( edge, tris ) -> ( edge, tris.otherVertex1, tris.otherVertex2 ))
-
-                        oldWay =
-                            splitOnShared tri1 tri2
-                                |> (\v ->
-                                        case v of
-                                            Nothing ->
-                                                Debug.crash ""
-
-                                            Just e ->
-                                                e
-                                   )
-                    in
-                        newWay
-                            |> Expect.equal ((\{ shared, other1, other2 } -> ( shared, other1, other2 )) oldWay)
-
-        equalFlip name tri1 tri2 =
-            Test.test ("equal flip for " ++ name) <|
-                \_ ->
-                    let
-                        proof =
-                            proof1 tri1 tri2
-
-                        newWay =
-                            proof
-                                |> SweepHull.checkAndFlipTrianglePairNew
-                                |> Maybe.map (AdjacencyList.readProof >> \( edge, tris ) -> ( tris.tri1, tris.tri2, edge ))
-
-                        oldWay =
-                            SweepHull.checkAndFlipTrianglePair tri1 tri2
-                    in
-                        newWay
-                            |> Expect.equal oldWay
-
-        unwrap proof =
-            AdjacencyList.readProof proof
-                |> (\( sharedEdge, { tri1, tri2 } ) ->
-                        ( tri1, tri2, sharedEdge )
-                   )
-
-        example1 =
-            ( tri1, tri2 )
-
-        example2 =
-            ( fromTuplesUnordered ( ( 670, 450 ), ( 520, 780 ), ( 610, 540 ) )
-            , fromTuplesUnordered ( ( 520, 780 ), ( 670, 450 ), ( 520, 810 ) )
-            )
-
-        example3 =
-            ( fromTuplesUnordered ( ( 610, 540 ), ( 520, 810 ), ( 670, 450 ) )
-            , fromTuplesUnordered ( ( 520, 810 ), ( 610, 540 ), ( 520, 780 ) )
-            )
-
-        example4 =
-            ( fromTuplesUnordered ( ( 0, 390 ), ( 70, 370 ), ( 10, 350 ) )
-            , fromTuplesUnordered ( ( 10, 350 ), ( 50, 160 ), ( 0, 390 ) )
-            )
+        toList ( a, b, c ) =
+            [ a, b, c ]
     in
-        Test.describe "checkAndFlipTrianglePair"
-            [ uncurry (verifyEqual "example 1") example1
-            , uncurry (verifyEqual "example 2") example2
-            , uncurry (verifyEqual "example 3") example3
-            , uncurry (verifyEqualStart "example 1") example1
-            , uncurry (verifyEqualStart "example 2") example2
-            , uncurry (verifyEqualStart "example 3") example3
-            , uncurry (verifyEqualSharedEdge "example 1") example1
-            , uncurry (verifyEqualSharedEdge "example 2") example2
-            , uncurry (verifyEqualSharedEdge "example 3") example3
-            , uncurry (equalTriangulation1 "example 1") example1
-            , uncurry (equalTriangulation1 "example 2") example2
-            , uncurry (equalTriangulation1 "example 3") example3
-            , uncurry (equalTriangulation1 "example 4") example4
-            , uncurry (equalTriangulation2 "example 1") example1
-            , uncurry (equalTriangulation2 "example 2") example2
-            , uncurry (equalTriangulation2 "example 3") example3
-            , uncurry (equalTriangulation2 "example 4") example4
-            , uncurry (verifyEqualSplit "example 1") example1
-            , uncurry (verifyEqualSplit "example 2") example2
-            , uncurry (verifyEqualSplit "example 3") example3
-            , uncurry (verifyEqualSplit "example 4") example4
-            , uncurry (equalFlip "example 1") example1
-            , uncurry (equalFlip "example 2") example2
-            , uncurry (equalFlip "example 3") example3
-            , uncurry (equalFlip "example 4") example4
-            , Test.test "example 4 old " <|
-                \_ ->
-                    let
-                        ( tri1, tri2 ) =
-                            example4
-                    in
-                        SweepHull.checkAndFlipTrianglePair tri1 tri2
-                            |> Expect.equal Nothing
-            , Test.test "example 4 new " <|
-                \_ ->
-                    proof1 tri1 tri2
-                        |> SweepHull.checkAndFlipTrianglePairNew
-                        |> Maybe.map (AdjacencyList.readProof >> \( edge, tris ) -> ( tris.tri1, tris.tri2, edge ))
-                        |> Expect.equal Nothing
+        Test.fuzz fuzzTriangle "hash triangle behaves as before" <|
+            \triangle ->
+                AdjacencyList.hashTriangle triangle
+                    |> toList
+                    |> Expect.equal (hashTriangleOld triangle)
+
+
+findOtherEdgeTest =
+    let
+        data =
+            [ ( ( 974, 396 ), ( 992, 456 ), Set.fromList [ ( ( 974, 354 ), ( 974, 396 ) ), ( ( 974, 354 ), ( 992, 456 ) ), ( ( 974, 396 ), ( 992, 456 ) ) ], Just (( 974, 354 )) )
+            , ( ( 992, 456 ), ( 998, 248 ), Set.fromList [ ( ( 974, 354 ), ( 992, 456 ) ), ( ( 974, 354 ), ( 998, 248 ) ), ( ( 992, 456 ), ( 998, 248 ) ) ], Just (( 974, 354 )) )
+            , ( ( 974, 354 ), ( 998, 248 ), Set.fromList [ ( ( 974, 354 ), ( 980, 304 ) ), ( ( 974, 354 ), ( 998, 248 ) ), ( ( 980, 304 ), ( 998, 248 ) ) ], Just (( 980, 304 )) )
+            , ( ( 974, 396 ), ( 974, 354 ), Set.fromList [ ( ( 950, 396 ), ( 974, 354 ) ), ( ( 950, 396 ), ( 974, 396 ) ), ( ( 974, 354 ), ( 974, 396 ) ) ], Just (( 950, 396 )) )
+            , ( ( 998, 248 ), ( 980, 304 ), Set.fromList [ ( ( 980, 304 ), ( 992, 456 ) ), ( ( 980, 304 ), ( 998, 248 ) ), ( ( 992, 456 ), ( 998, 248 ) ) ], Just (( 992, 456 )) )
+            , ( ( 980, 304 ), ( 974, 354 ), Set.fromList [ ( ( 974, 354 ), ( 980, 304 ) ), ( ( 974, 354 ), ( 992, 456 ) ), ( ( 980, 304 ), ( 992, 456 ) ) ], Just (( 992, 456 )) )
+            , ( ( 992, 456 ), ( 974, 354 ), Set.fromList [ ( ( 974, 354 ), ( 974, 396 ) ), ( ( 974, 354 ), ( 992, 456 ) ), ( ( 974, 396 ), ( 992, 456 ) ) ], Just (( 974, 396 )) )
+            , ( ( 992, 456 ), ( 998, 248 ), Set.fromList [ ( ( 980, 304 ), ( 992, 456 ) ), ( ( 980, 304 ), ( 998, 248 ) ), ( ( 992, 456 ), ( 998, 248 ) ) ], Just (( 980, 304 )) )
+            , ( ( 950, 738 ), ( 994, 782 ), Set.fromList [ ( ( 950, 738 ), ( 994, 782 ) ), ( ( 950, 738 ), ( 998, 778 ) ), ( ( 994, 782 ), ( 998, 778 ) ) ], Just (( 998, 778 )) )
+            , ( ( 998, 630 ), ( 950, 738 ), Set.fromList [ ( ( 950, 738 ), ( 998, 630 ) ), ( ( 950, 738 ), ( 998, 778 ) ), ( ( 998, 630 ), ( 998, 778 ) ) ], Just (( 998, 778 )) )
+            , ( ( 998, 778 ), ( 994, 782 ), Set.fromList [ ( ( 980, 866 ), ( 994, 782 ) ), ( ( 980, 866 ), ( 998, 778 ) ), ( ( 994, 782 ), ( 998, 778 ) ) ], Just (( 980, 866 )) )
+            , ( ( 998, 778 ), ( 998, 630 ), Set.fromList [ ( ( 950, 738 ), ( 998, 630 ) ), ( ( 950, 738 ), ( 998, 778 ) ), ( ( 998, 630 ), ( 998, 778 ) ) ], Just (( 950, 738 )) )
+            , ( ( 950, 738 ), ( 998, 778 ), Set.fromList [ ( ( 950, 738 ), ( 998, 630 ) ), ( ( 950, 738 ), ( 998, 778 ) ), ( ( 998, 630 ), ( 998, 778 ) ) ], Just (( 998, 630 )) )
+            , ( ( 998, 778 ), ( 994, 782 ), Set.fromList [ ( ( 980, 866 ), ( 994, 782 ) ), ( ( 980, 866 ), ( 998, 778 ) ), ( ( 994, 782 ), ( 998, 778 ) ) ], Just (( 980, 866 )) )
+            , ( ( 960, 758 ), ( 950, 738 ), Set.fromList [ ( ( 930, 786 ), ( 950, 738 ) ), ( ( 930, 786 ), ( 960, 758 ) ), ( ( 950, 738 ), ( 960, 758 ) ) ], Just (( 930, 786 )) )
+            , ( ( 960, 758 ), ( 994, 782 ), Set.fromList [ ( ( 960, 758 ), ( 994, 782 ) ), ( ( 960, 758 ), ( 998, 778 ) ), ( ( 994, 782 ), ( 998, 778 ) ) ], Just (( 998, 778 )) )
             ]
+
+        makeTest i ( p1, p2, edges, expected ) =
+            Test.test ("findOtherEdgeTest #" ++ toString i) <|
+                \_ ->
+                    AdjacencyList.findOtherEdge (Point2d.fromCoordinates p1) (Point2d.fromCoordinates p2) edges
+                        |> Expect.equal (Maybe.map Point2d.fromCoordinates expected)
+    in
+        Test.describe "findOtherEdgeTest" (List.indexedMap makeTest data)

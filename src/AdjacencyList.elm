@@ -29,6 +29,9 @@ module AdjacencyList
         , size
         , filter
         , member
+        , unsafeUnwrap
+        , findOtherEdge
+        , hashTriangle
         )
 
 import AllDict exposing (AllDict)
@@ -51,13 +54,34 @@ type alias AdjacentTriangles =
     { tri1 : Triangle2d, tri2 : Triangle2d, otherVertex1 : Point2d, otherVertex2 : Point2d }
 
 
-hashTriangle : Triangle2d -> List ( Float, Float )
+hashTriangle : Triangle2d -> ( ( Float, Float ), ( Float, Float ), ( Float, Float ) )
 hashTriangle triangle =
     let
-        ( p1, p2, p3 ) =
+        ( q1, q2, q3 ) =
             Triangle2d.vertices triangle
+
+        p1 =
+            Point2d.coordinates q1
+
+        p2 =
+            Point2d.coordinates q2
+
+        p3 =
+            Point2d.coordinates q3
     in
-        List.sort <| List.map Point2d.coordinates [ p1, p2, p3 ]
+        if p1 < p2 then
+            if p3 < p1 then
+                ( p3, p1, p2 )
+            else if p3 < p2 then
+                ( p1, p3, p2 )
+            else
+                ( p1, p2, p3 )
+        else if p3 < p2 then
+            ( p3, p2, p1 )
+        else if p3 < p1 then
+            ( p2, p3, p1 )
+        else
+            ( p2, p1, p3 )
 
 
 hashEdge : LineSegment2d -> Edge
@@ -87,6 +111,16 @@ singleton key value =
 
 type Error
     = DontShareEdge { tri1 : Triangle2d, tri2 : Triangle2d, edge : LineSegment2d }
+
+
+unsafeUnwrap : String -> Result Error AdjacencyList -> AdjacencyList
+unsafeUnwrap desc v =
+    case v of
+        Err e ->
+            Debug.crash (desc ++ ": " ++ toString e)
+
+        Ok v ->
+            v
 
 
 insert : LineSegment2d -> ( Triangle2d, Triangle2d ) -> AdjacencyList -> Result Error AdjacencyList
@@ -372,6 +406,70 @@ flipProof (AdjacencyProof proof) =
             }
 
 
+findOtherEdgeOld : Point2d -> Point2d -> Set Edge -> Maybe Point2d
+findOtherEdgeOld point1 point2 edges =
+    edges
+        |> Set.toList
+        |> List.concatMap (\( a, b ) -> [ a, b ])
+        |> List.filter (\p -> p /= Point2d.coordinates point1 && p /= Point2d.coordinates point2)
+        |> List.head
+        |> Maybe.map Point2d.fromCoordinates
+
+
+findOtherEdge : Point2d -> Point2d -> Set Edge -> Maybe Point2d
+findOtherEdge point1_ point2_ edges =
+    let
+        point1 =
+            Point2d.coordinates point1_
+
+        point2 =
+            Point2d.coordinates point2_
+
+        folder : Edge -> Maybe ( Float, Float ) -> Maybe ( Float, Float )
+        folder ( p1, p2 ) accum =
+            case accum of
+                Just v ->
+                    Just v
+
+                Nothing ->
+                    if p1 /= point1 && p1 /= point2 then
+                        Just p1
+                    else if p2 /= point1 && p2 /= point2 then
+                        Just p2
+                    else
+                        Nothing
+    in
+        edges
+            |> Set.foldl folder Nothing
+            |> Maybe.map Point2d.fromCoordinates
+
+
+proofAdjacencyCommon : Triangle2d -> Triangle2d -> Set Edge -> Set Edge -> Maybe AdjacencyProof
+proofAdjacencyCommon tri1 tri2 edgesT1 edgesT2 =
+    case hasCommonEdge tri1 tri2 of
+        Just edge ->
+            let
+                ( p1, p2 ) =
+                    LineSegment2d.endpoints edge
+            in
+                case Maybe.map2 (,) (findOtherEdge p1 p2 edgesT1) (findOtherEdge p1 p2 edgesT2) of
+                    Just ( s1, s2 ) ->
+                        Just <|
+                            AdjacencyProof
+                                { tri1 = tri1
+                                , tri2 = tri2
+                                , sharedEdge = edge
+                                , otherVertex1 = s1
+                                , otherVertex2 = s2
+                                }
+
+                    Nothing ->
+                        Nothing
+
+        Nothing ->
+            Nothing
+
+
 proofAdjacency : Triangle2d -> Triangle2d -> Maybe AdjacencyProof
 proofAdjacency tri1 tri2 =
     let
@@ -384,39 +482,7 @@ proofAdjacency tri1 tri2 =
         combinedEdgeSet =
             (Set.intersect edgesT2 edgesT1)
     in
-        case hasCommonEdge tri1 tri2 of
-            Just edge ->
-                let
-                    mapBoth f ( a, b ) =
-                        ( f a, f b )
-
-                    ( p1, p2 ) =
-                        LineSegment2d.endpoints edge
-
-                    findOtherEdge edges =
-                        edges
-                            |> Set.toList
-                            |> List.concatMap (\( a, b ) -> [ a, b ])
-                            |> List.filter (\p -> p /= Point2d.coordinates p1 && p /= Point2d.coordinates p2)
-                            |> List.head
-                            |> Maybe.map Point2d.fromCoordinates
-                in
-                    case Maybe.map2 (,) (findOtherEdge edgesT1) (findOtherEdge edgesT2) of
-                        Just ( s1, s2 ) ->
-                            Just <|
-                                AdjacencyProof
-                                    { tri1 = tri1
-                                    , tri2 = tri2
-                                    , sharedEdge = edge
-                                    , otherVertex1 = s1
-                                    , otherVertex2 = s2
-                                    }
-
-                        Nothing ->
-                            Nothing
-
-            Nothing ->
-                Nothing
+        proofAdjacencyCommon tri1 tri2 edgesT1 edgesT2
 
 
 proofAdjacencyFromEdge : LineSegment2d -> Triangle2d -> Triangle2d -> Maybe AdjacencyProof
@@ -432,7 +498,7 @@ proofAdjacencyFromEdge edge tri1 tri2 =
             (Set.intersect edgesT1 edgesT2)
     in
         if Set.member (hashEdge edge) combinedEdgeSet then
-            proofAdjacency tri1 tri2
+            proofAdjacencyCommon tri1 tri2 edgesT1 edgesT2
         else
             Nothing
 
@@ -468,12 +534,6 @@ sortOnShared (AdjacencyProof proof) =
 sortOnSharedNew : AdjacencyProof -> ( Triangle2d, Triangle2d, LineSegment2d )
 sortOnSharedNew (AdjacencyProof proof) =
     let
-        t1 =
-            proof.tri1
-
-        t2 =
-            proof.tri2
-
         shared =
             proof.sharedEdge
 
@@ -510,10 +570,7 @@ hasCommonEdge tri1 tri2 =
                 ( e1, e2, e3 ) =
                     Triangle2d.edges tri2
             in
-                [ e1, e2, e3 ]
-
-        options =
-            edges2 ++ List.map LineSegment2d.reverse edges2
+                Set.fromList [ hashEdge e1, hashEdge e2, hashEdge e3 ]
 
         folder edge accum =
             case accum of
@@ -521,7 +578,7 @@ hasCommonEdge tri1 tri2 =
                     Just x
 
                 Nothing ->
-                    if List.member edge options then
+                    if Set.member (hashEdge edge) edges2 then
                         Just edge
                     else
                         Nothing
