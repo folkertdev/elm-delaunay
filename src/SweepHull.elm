@@ -124,15 +124,6 @@ hashEdge line =
             ( q2, q1 )
 
 
-hashTriangle : Triangle2d -> List ( Float, Float )
-hashTriangle triangle =
-    let
-        ( p1, p2, p3 ) =
-            Triangle2d.vertices triangle
-    in
-        List.sort <| List.map Point2d.coordinates [ p1, p2, p3 ]
-
-
 type alias SharedEdgeSet =
     AllDict LineSegment2d () ( ( Float, Float ), ( Float, Float ) )
 
