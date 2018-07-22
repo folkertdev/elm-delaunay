@@ -24,6 +24,11 @@ module AdjacencyList
         , sortOnShared
         , keySet
         , getProof
+        , AdjacentTriangles
+        , partition
+        , size
+        , filter
+        , member
         )
 
 import AllDict exposing (AllDict)
@@ -75,12 +80,16 @@ empty =
     AdjacencyList (AllDict.empty hashEdge)
 
 
-singleton : LineSegment2d -> ( Triangle2d, Triangle2d ) -> Result String AdjacencyList
+singleton : LineSegment2d -> ( Triangle2d, Triangle2d ) -> Result Error AdjacencyList
 singleton key value =
     insert key value empty
 
 
-insert : LineSegment2d -> ( Triangle2d, Triangle2d ) -> AdjacencyList -> Result String AdjacencyList
+type Error
+    = DontShareEdge { tri1 : Triangle2d, tri2 : Triangle2d, edge : LineSegment2d }
+
+
+insert : LineSegment2d -> ( Triangle2d, Triangle2d ) -> AdjacencyList -> Result Error AdjacencyList
 insert edge ( t1, t2 ) alist =
     case Maybe.map (\p -> insertProof p alist) (proofAdjacencyFromEdge edge t1 t2) of
         Just done ->
@@ -88,9 +97,8 @@ insert edge ( t1, t2 ) alist =
 
         Nothing ->
             Err <|
-                toString
-                    { error = "invalid insertion: triangles do not share edge"
-                    , tri1 = t1
+                DontShareEdge
+                    { tri1 = t1
                     , tri2 = t2
                     , edge = edge
                     }
@@ -105,6 +113,30 @@ insertProof (AdjacencyProof proof) (AdjacencyList dict) =
 remove : LineSegment2d -> AdjacencyList -> AdjacencyList
 remove edge (AdjacencyList dict) =
     AdjacencyList (AllDict.remove edge dict)
+
+
+partition : (LineSegment2d -> AdjacentTriangles -> Bool) -> AdjacencyList -> ( AdjacencyList, AdjacencyList )
+partition predicate (AdjacencyList dict) =
+    let
+        ( d1, d2 ) =
+            AllDict.partition predicate dict
+    in
+        ( AdjacencyList d1, AdjacencyList d2 )
+
+
+size : AdjacencyList -> Int
+size (AdjacencyList dict) =
+    AllDict.size dict
+
+
+member : LineSegment2d -> AdjacencyList -> Bool
+member edge (AdjacencyList dict) =
+    AllDict.member edge dict
+
+
+filter : (LineSegment2d -> AdjacentTriangles -> Bool) -> AdjacencyList -> AdjacencyList
+filter predicate (AdjacencyList dict) =
+    AdjacencyList (AllDict.filter predicate dict)
 
 
 get : LineSegment2d -> AdjacencyList -> Maybe AdjacentTriangles
@@ -132,7 +164,7 @@ keys (AdjacencyList dict) =
     AllDict.keys dict
 
 
-fromList : List ( LineSegment2d, ( Triangle2d, Triangle2d ) ) -> Result String AdjacencyList
+fromList : List ( LineSegment2d, ( Triangle2d, Triangle2d ) ) -> Result Error AdjacencyList
 fromList list =
     case list of
         [] ->
@@ -185,7 +217,7 @@ foldr folder default (AdjacencyList dict) =
     AllDict.foldr folder default dict
 
 
-map : (LineSegment2d -> AdjacentTriangles -> ( Triangle2d, Triangle2d )) -> AdjacencyList -> Result String AdjacencyList
+map : (LineSegment2d -> AdjacentTriangles -> ( Triangle2d, Triangle2d )) -> AdjacencyList -> Result Error AdjacencyList
 map mapper =
     let
         folder key value accum =
@@ -250,8 +282,10 @@ edges triangles =
                 ( p1, p2, p3 ) =
                     (Triangle2d.edges triangle)
             in
-                [ p1, p2, p3 ]
-                    |> List.foldl (\edge -> AllDict.update edge (updater edge triangle)) accum
+                accum
+                    |> AllDict.update p1 (updater p1 triangle)
+                    |> AllDict.update p2 (updater p2 triangle)
+                    |> AllDict.update p3 (updater p3 triangle)
 
         updater k triangle existing =
             case existing of
@@ -268,13 +302,12 @@ edges triangles =
                         Debug.crash ("three?" ++ toString ( t1, t2, triangle ))
     in
         triangles
-            |> List.map (\tri -> ( tri, () ))
-            |> AllDict.fromList hashTriangle
+            |> List.foldl (\triangle -> AllDict.insert triangle ()) (AllDict.empty hashTriangle)
             |> AllDict.keys
-            |> List.foldr folder (AllDict.empty hashEdge)
+            |> List.foldl folder (AllDict.empty hashEdge)
 
 
-fromTriangles : List Triangle2d -> Result String AdjacencyList
+fromTriangles : List Triangle2d -> Result Error AdjacencyList
 fromTriangles triangles =
     AllDict.foldr
         (\key value accum ->

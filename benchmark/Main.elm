@@ -3,6 +3,7 @@ module Main exposing (..)
 import Benchmark exposing (..)
 import Benchmark.Runner exposing (BenchmarkProgram, program)
 import SweepHull
+import SweepHullOld
 import Point2d exposing (Point2d)
 import Triangle2d exposing (Triangle2d)
 import Polygon2d exposing (Polygon2d)
@@ -11,31 +12,7 @@ import Set
 
 main : BenchmarkProgram
 main =
-    program flipTriangles
-
-
-commonEdge : Benchmark
-commonEdge =
-    case tesselation10 of
-        tri1 :: tri2 :: _ ->
-            describe "SweepHull"
-                [ -- nest as many descriptions as you like
-                  describe "sweepHull"
-                    [ Benchmark.compare "old vs new"
-                        "old"
-                        (\_ -> SweepHull.hasCommonEdge tri1 tri2)
-                        "new"
-                        (\_ -> SweepHull.hasCommonEdgeFast tri1 tri2)
-                    , Benchmark.compare "old vs set"
-                        "old"
-                        (\_ -> SweepHull.hasCommonEdge tri1 tri2)
-                        "set"
-                        (\_ -> SweepHull.hasCommonEdgeSet tri1 tri2)
-                    ]
-                ]
-
-        _ ->
-            Debug.crash "no two triangles"
+    program sharesEdge
 
 
 sweepHull : Benchmark
@@ -51,6 +28,47 @@ sweepHull =
         ]
 
 
+
+{-
+   sharesEdge =
+       let
+           tri1 =
+               Triangle2d.fromVertices
+                   ( (Point2d.fromCoordinates ( 1, 1 ))
+                   , (Point2d.fromCoordinates ( 0, 0 ))
+                   , (Point2d.fromCoordinates ( 1, 0 ))
+                   )
+
+           tri2 =
+               Triangle2d.fromVertices
+                   ( (Point2d.fromCoordinates ( 1, 1 ))
+                   , (Point2d.fromCoordinates ( 0, 0 ))
+                   , (Point2d.fromCoordinates ( 0, 1 ))
+                   )
+
+           tri3 =
+               Triangle2d.fromVertices
+                   ( (Point2d.fromCoordinates ( 10, 10 ))
+                   , (Point2d.fromCoordinates ( 42, 52 ))
+                   , (Point2d.fromCoordinates ( -1, 0 ))
+                   )
+       in
+           describe "SweepHull"
+               [ -- nest as many descriptions as you like
+                 Benchmark.compare "sharesEdge shared"
+                   "old"
+                   (\_ -> SweepHull.sharesEdge tri1 tri2)
+                   "new"
+                   (\_ -> SweepHull.sharesEdge2 tri1 tri2)
+               , Benchmark.compare "sharesEdge not shared"
+                   "old"
+                   (\_ -> SweepHull.sharesEdge tri1 tri3)
+                   "new"
+                   (\_ -> SweepHull.sharesEdge2 tri1 tri3)
+               ]
+-}
+
+
 tesselation10 =
     randomPoints100
         |> List.take 10
@@ -64,7 +82,7 @@ x =
 
 
 y =
-    SweepHull.flipTrianglesUntilFixpointOld tesselation10
+    SweepHullOld.flipTrianglesUntilFixpointOld tesselation10
         |> List.sortBy SweepHull.hashTriangle
         |> Debug.log "old"
 
@@ -82,7 +100,7 @@ flipTriangles =
               describe "sweepHull"
                 [ Benchmark.compare "flipping"
                     "old"
-                    (\_ -> SweepHull.flipTrianglesUntilFixpointOld tesselation10)
+                    (\_ -> SweepHullOld.flipTrianglesUntilFixpointOld tesselation10)
                     "new"
                     (\_ -> SweepHull.flipTrianglesUntilFixpoint tesselation10)
                 ]

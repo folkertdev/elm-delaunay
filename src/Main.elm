@@ -1,16 +1,16 @@
 module Main exposing (..)
 
 import SweepHull exposing (hashTriangle)
+import SweepHullOld
 import Point2d exposing (Point2d)
 import Triangle2d exposing (Triangle2d)
 import SubPath exposing (SubPath)
 import Curve
 import Svg exposing (Svg)
 import Svg.Attributes exposing (fill, strokeWidth, stroke, width, height)
-import Path
 import Html
-import AllDict
 import Set
+import Random500
 
 
 drawTriangle : String -> Triangle2d -> Svg msg
@@ -211,6 +211,10 @@ initialTriangulation points =
 
 
 main =
+    main2 ()
+
+
+main1 _ =
     let
         n =
             100
@@ -224,7 +228,7 @@ main =
                 |> List.sortBy SweepHull.hashTriangle
 
         oldTriangles_ =
-            SweepHull.sweepHullOld (List.take n randomPoints)
+            SweepHullOld.sweepHullOld (List.take n randomPoints)
                 |> Tuple.first
                 |> List.sortBy SweepHull.hashTriangle
 
@@ -271,4 +275,19 @@ main =
             , Svg.svg
                 [ fill "none", stroke "black", strokeWidth "2", width "1000", height "1000" ]
                 oldTriangles
+            ]
+
+
+main2 _ =
+    let
+        triangles =
+            SweepHull.sweepHull Random500.points
+                |> Tuple.first
+                |> List.sortBy SweepHull.hashTriangle
+                |> List.map (drawTriangle "white")
+    in
+        Html.div []
+            [ Svg.svg
+                [ fill "none", stroke "black", strokeWidth "2", width "1000", height "1000" ]
+                triangles
             ]

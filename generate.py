@@ -1,4 +1,7 @@
 import random
 
-for i in range(100):
-    print(", (", random.randint(0, 100), ", ", random.randint(0, 100), ")" )
+
+randoms = { (random.randint(0, 500) , random.randint(0,500)) for i in range(500) }
+
+for (a,b) in randoms:
+    print(", (", a, ", ", b, ")" )
