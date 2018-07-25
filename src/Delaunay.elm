@@ -6,8 +6,10 @@ import Circle2d
 import Direction2d
 import Axis2d
 import Array.Hamt as Array exposing (Array)
-import Set
+import Set exposing (Set)
 import BoundingBox2d
+import Dict exposing (Dict)
+import Polygon2d exposing (Polygon2d)
 
 
 {-| The state of the triangulation, using flat arrays for vertices, edges, and faces
@@ -53,6 +55,12 @@ type alias Edge =
 
 delaunayTriangulation : Array Point2d -> List Triangle2d
 delaunayTriangulation rawPoints =
+    createGeometry rawPoints
+        |> toTriangulation
+
+
+createGeometry : Array Point2d -> GeometryState
+createGeometry rawPoints =
     let
         ( superTriangle, points ) =
             checkInput identity rawPoints
@@ -105,7 +113,6 @@ delaunayTriangulation rawPoints =
             |> Array.slice 3 (Array.length points)
             |> Array.indexedMap (\i e -> ( i + 3, e ))
             |> Array.foldl folder initialGeometryState
-            |> toTriangulation
 
 
 checkInput : (vertex -> Point2d) -> Array vertex -> ( Triangle2d, Array Point2d )
@@ -160,6 +167,74 @@ checkInput toPoint vertices =
             |> (\list -> [ superP1, superP2, superP3 ] ++ list)
             |> Array.fromList
         )
+
+
+getVertexIndices : Face -> Array Edge -> Maybe ( Int, Int, Int )
+getVertexIndices face edges =
+    Maybe.map2 (,)
+        (Array.get face.edge1 edges)
+        (Array.get face.edge3 edges)
+        |> Maybe.map (\( firstEdge, lastEdge ) -> ( firstEdge.start, firstEdge.end, lastEdge.start ))
+
+
+centerPointsPerVertex : GeometryState -> Dict Int (List Point2d)
+centerPointsPerVertex { faces, edges, points } =
+    let
+        insertWith : comparable -> (a -> b -> b) -> b -> a -> Dict comparable b -> Dict comparable b
+        insertWith key append default value dict =
+            let
+                updater optionalValue =
+                    case optionalValue of
+                        Nothing ->
+                            Just (append value default)
+
+                        Just current ->
+                            Just (append value current)
+            in
+                Dict.update key updater dict
+
+        folder face accum =
+            if face.marked || face.superTrianglePoints /= Zero then
+                accum
+            else
+                case getVertexIndices face edges of
+                    Nothing ->
+                        accum
+
+                    Just ( p1, p2, p3 ) ->
+                        let
+                            newCenter =
+                                case Maybe.map3 (,,) (Array.get p1 points) (Array.get p2 points) (Array.get p3 points) |> Maybe.map Triangle2d.fromVertices of
+                                    Nothing ->
+                                        face.center
+
+                                    Just triangle ->
+                                        Triangle2d.circumcircle triangle
+                                            |> Maybe.map Circle2d.centerPoint
+                                            |> Maybe.withDefault face.center
+                        in
+                            accum
+                                |> insertWith p1 (::) [] newCenter
+                                |> insertWith p2 (::) [] newCenter
+                                |> insertWith p3 (::) [] newCenter
+    in
+        Array.foldl folder Dict.empty faces
+
+
+
+{-
+   |> Dict.remove 0
+   |> Dict.remove 1
+   |> Dict.remove 2
+-}
+
+
+voronoiDiagram : Array Point2d -> List Polygon2d
+voronoiDiagram rawPoints =
+    createGeometry rawPoints
+        |> centerPointsPerVertex
+        |> Dict.values
+        |> List.map Polygon2d.convexHull
 
 
 newFace : ( Int, Point2d ) -> ( Int, Edge ) -> GeometryState -> ( Int, GeometryState )

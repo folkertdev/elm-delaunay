@@ -16,6 +16,10 @@ import AdjacencyList exposing (hashTriangle)
 import Vector2d
 import Circle2d
 import Array.Hamt as Array
+import Geometry.Svg
+import Polygon2d
+import Circle2d
+import Dict
 
 
 drawTriangle : String -> Triangle2d -> Svg msg
@@ -344,19 +348,35 @@ main3 _ =
                 ]
 
         makeVisible triangles =
-            triangles
-                |> List.map (Triangle2d.scaleAbout (Point2d.fromCoordinates ( 500, 500 )) 0.9)
-                |> List.map (drawTriangle "none")
+            let
+                mapper triangle_ =
+                    let
+                        triangle =
+                            -- Triangle2d.scaleAbout (Point2d.fromCoordinates ( 500, 500 )) 0.9 triangle_
+                            triangle_
+                    in
+                        {-
+                           case Triangle2d.circumcircle triangle |> Maybe.map (Circle2d.centerPoint >> Point2d.coordinates) of
+
+                               Just ( x, y ) ->
+                                   [ Svg.circle [ cx (toString x), cy (toString y), r "10", fill "black" ] []
+                                   , drawTriangle "none" triangle
+                                   ]
+
+                               Nothing ->
+                        -}
+                        [ drawTriangle "none" triangle ]
+            in
+                List.concatMap mapper triangles
 
         transformation =
-            Triangle2d.scaleAbout (Point2d.fromCoordinates ( 500, 500 )) 1.1 << Triangle2d.translateBy displacement << Triangle2d.scaleAbout Point2d.origin 0.1
+            Triangle2d.scaleAbout (Point2d.fromCoordinates ( 500, 500 )) 0.5 << Triangle2d.translateBy displacement << Triangle2d.scaleAbout Point2d.origin 0.1
 
         transformation_ =
-            Point2d.coordinates
-                << Point2d.scaleAbout (Point2d.fromCoordinates ( 500, 500 )) 1.1
-                << Point2d.translateBy displacement
-                << Point2d.scaleAbout Point2d.origin 0.1
-                << Point2d.fromCoordinates
+            Polygon2d.scaleAbout (Point2d.fromCoordinates ( 500, 500 )) 0.5 << Polygon2d.translateBy displacement << Polygon2d.scaleAbout Point2d.origin 0.1
+
+        transformation__ =
+            Point2d.scaleAbout (Point2d.fromCoordinates ( 500, 500 )) 0.2
 
         makeVisibleWithCircles triangles =
             triangles
@@ -368,9 +388,40 @@ main3 _ =
                 |> makeVisible
 
         n =
-            4
+            500
+
+        ps =
+            (List.take n Random500.points |> Array.fromList)
+                |> Array.map transformation__
+
+        void _ =
+            []
+
+        centers =
+            ps
+                |> Delaunay.createGeometry
+                |> Delaunay.centerPointsPerVertex
+                |> Dict.values
+                |> List.concat
+                |> List.map Point2d.coordinates
+                |> List.map
+                    (\( x, y ) ->
+                        Svg.circle [ cx (toString x), cy (toString y), r "5", fill "red", stroke "none" ] []
+                    )
+
+        voronoiTris =
+            ps
+                |> Delaunay.delaunayTriangulation
+                |> makeVisible
+
+        voronoiDiag =
+            ps
+                |> Delaunay.voronoiDiagram
+                |> Debug.log "polygons"
+                |> List.map (Geometry.Svg.polygon2d [ stroke "steelblue" ])
     in
         Html.div []
             [ text "We start with a triangle covering all of our points"
             , Svg.svg [ fill "none", stroke "black", strokeWidth "2", width "1000", height "1000" ] (step5)
+            , Svg.svg [ fill "none", stroke "black", strokeWidth "2", width "1000", height "1000" ] (voronoiDiag ++ voronoiTris ++ centers)
             ]
