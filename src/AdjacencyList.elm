@@ -32,6 +32,8 @@ module AdjacencyList
         , unsafeUnwrap
         , findOtherEdge
         , hashTriangle
+        , hashEdge
+        , hasCommonEdge
         )
 
 import AllDict exposing (AllDict)

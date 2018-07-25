@@ -1,5 +1,6 @@
 module Main exposing (..)
 
+import Delaunay
 import SweepHull
 import SweepHullOld
 import Point2d exposing (Point2d)
@@ -7,11 +8,14 @@ import Triangle2d exposing (Triangle2d)
 import SubPath exposing (SubPath)
 import Curve
 import Svg exposing (Svg)
-import Svg.Attributes exposing (fill, strokeWidth, stroke, width, height)
-import Html
+import Svg.Attributes exposing (fill, strokeWidth, stroke, width, height, viewBox, cx, cy, r)
+import Html exposing (text)
 import Set
 import Random500
 import AdjacencyList exposing (hashTriangle)
+import Vector2d
+import Circle2d
+import Array.Hamt as Array
 
 
 drawTriangle : String -> Triangle2d -> Svg msg
@@ -212,13 +216,24 @@ initialTriangulation points =
 
 
 main =
-    main2 ()
+    main3 ()
 
 
 main1 _ =
     let
+        displacement =
+            Vector2d.fromComponents ( 500, 250 )
+
+        points =
+            List.map Point2d.fromCoordinates
+                [ ( 0, 0 )
+                , ( 500, 500 )
+                , ( 0, 500 )
+                , ( 500, 0 )
+                ]
+
         n =
-            100
+            4
 
         _ =
             Debug.log "degenerate?" (List.any (\x -> Triangle2d.area x == 0) triangles_)
@@ -289,6 +304,73 @@ main2 _ =
     in
         Html.div []
             [ Svg.svg
-                [ fill "none", stroke "black", strokeWidth "2", width "1000", height "1000" ]
+                [ fill "none", stroke "grey", strokeWidth "2", width "1000", height "1000" ]
                 triangles
+            ]
+
+
+drawCircle : Triangle2d -> Svg msg
+drawCircle triangle =
+    case Triangle2d.circumcircle triangle of
+        Nothing ->
+            text ""
+
+        Just circle ->
+            let
+                ( x, y ) =
+                    Circle2d.centerPoint circle |> Point2d.coordinates
+
+                radius =
+                    Circle2d.radius circle
+            in
+                Svg.circle [ cx (toString x), cy (toString y), r (toString radius), fill "none" ] []
+
+
+drawPoint ( x, y ) =
+    Svg.circle [ cx (toString x), cy (toString y), r (toString 5), fill "black" ] []
+
+
+main3 _ =
+    let
+        displacement =
+            Vector2d.fromComponents ( 350, 300 )
+
+        points =
+            List.map Point2d.fromCoordinates
+                [ ( 0, 0 )
+                , ( 500, 500 )
+                , ( 0, 500 )
+                , ( 520, 0 )
+                ]
+
+        makeVisible triangles =
+            triangles
+                |> List.map (Triangle2d.scaleAbout (Point2d.fromCoordinates ( 500, 500 )) 0.9)
+                |> List.map (drawTriangle "none")
+
+        transformation =
+            Triangle2d.scaleAbout (Point2d.fromCoordinates ( 500, 500 )) 1.1 << Triangle2d.translateBy displacement << Triangle2d.scaleAbout Point2d.origin 0.1
+
+        transformation_ =
+            Point2d.coordinates
+                << Point2d.scaleAbout (Point2d.fromCoordinates ( 500, 500 )) 1.1
+                << Point2d.translateBy displacement
+                << Point2d.scaleAbout Point2d.origin 0.1
+                << Point2d.fromCoordinates
+
+        makeVisibleWithCircles triangles =
+            triangles
+                |> List.map transformation
+                |> List.concatMap (\triangle -> [ drawTriangle "white" triangle, drawCircle triangle ])
+
+        step5 =
+            Delaunay.delaunayTriangulation (List.take 500 Random500.points |> Array.fromList)
+                |> makeVisible
+
+        n =
+            4
+    in
+        Html.div []
+            [ text "We start with a triangle covering all of our points"
+            , Svg.svg [ fill "none", stroke "black", strokeWidth "2", width "1000", height "1000" ] (step5)
             ]
